@@ -2,221 +2,308 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import pytesseract
+from PIL import Image
+import pdfplumber
+import re
 
 st.set_page_config(page_title="PARS Asthma System", layout="wide")
 
 st.title("PARS – Asthma Remission System")
 
-# -----------------------
-# 示例数据
-# -----------------------
+# =========================
+# 数据输入方式
+# =========================
 
-PEF_AM = 580
-PEF_PM = 560
-FEV1 = 2.6
-MEF25 = 30
-MEF50 = 40
-MEF75 = 50
+st.header("Patient Data Input")
+
+input_mode = st.radio(
+    "Select Data Input Method",
+    ["Manual Input","Upload PDF","Upload Image"]
+)
+
+# 默认值
+FEV1 = None
+MEF25 = None
+MEF50 = None
+MEF75 = None
+PEF_AM = None
+PEF_PM = None
 symptom = 1
 
-# -----------------------
+
+# =========================
+# 手工录入
+# =========================
+
+if input_mode == "Manual Input":
+
+    c1,c2,c3 = st.columns(3)
+
+    with c1:
+
+        FEV1 = st.number_input("FEV1 (L)",0.5,6.0,2.6,0.1)
+
+        symptom = st.slider("Symptom Score",0,5,1)
+
+    with c2:
+
+        MEF25 = st.number_input("MEF25 (%)",0,100,30)
+
+        MEF50 = st.number_input("MEF50 (%)",0,100,40)
+
+        MEF75 = st.number_input("MEF75 (%)",0,100,50)
+
+    with c3:
+
+        PEF_AM = st.number_input("Morning PEF",100,800,580)
+
+        PEF_PM = st.number_input("Evening PEF",100,800,560)
+
+
+# =========================
+# PDF导入
+# =========================
+
+if input_mode == "Upload PDF":
+
+    pdf_file = st.file_uploader("Upload Pulmonary Function Report",type=["pdf"])
+
+    if pdf_file:
+
+        text=""
+
+        with pdfplumber.open(pdf_file) as pdf:
+
+            for page in pdf.pages:
+
+                page_text = page.extract_text()
+
+                if page_text:
+
+                    text += page_text
+
+        st.text_area("Extracted Text",text,height=200)
+
+
+# =========================
+# 照片 OCR
+# =========================
+
+if input_mode == "Upload Image":
+
+    image_file = st.file_uploader("Upload Report Photo",type=["jpg","jpeg","png"])
+
+    if image_file:
+
+        image = Image.open(image_file)
+
+        st.image(image,width=300)
+
+        text = pytesseract.image_to_string(image,lang="chi_sim+eng")
+
+        st.text_area("OCR Result",text,height=200)
+
+
+# =========================
+# 中国肺功能报告解析
+# =========================
+
+def extract_value(pattern,text):
+
+    match = re.search(pattern,text,re.IGNORECASE)
+
+    if match:
+
+        return float(match.group(1))
+
+    return None
+
+
+def parse_pft(text):
+
+    FEV1 = extract_value(r"FEV1[^0-9]*(\d+\.\d+)",text)
+
+    PEF = extract_value(r"PEF[^0-9]*(\d+\.?\d*)",text)
+
+    MEF25 = extract_value(r"MEF25[^0-9]*(\d+\.?\d*)",text)
+
+    MEF50 = extract_value(r"MEF50[^0-9]*(\d+\.?\d*)",text)
+
+    MEF75 = extract_value(r"MEF75[^0-9]*(\d+\.?\d*)",text)
+
+    FEF25 = extract_value(r"FEF25[^0-9]*(\d+\.?\d*)",text)
+
+    FEF50 = extract_value(r"FEF50[^0-9]*(\d+\.?\d*)",text)
+
+    FEF75 = extract_value(r"FEF75[^0-9]*(\d+\.?\d*)",text)
+
+    MMEF = extract_value(r"MMEF[^0-9]*(\d+\.?\d*)",text)
+
+    FEF2575 = extract_value(r"FEF25[-–]?75[^0-9]*(\d+\.?\d*)",text)
+
+    if MEF25 is None and FEF75:
+        MEF25 = FEF75
+
+    if MEF50 is None and FEF50:
+        MEF50 = FEF50
+
+    if MEF75 is None and FEF25:
+        MEF75 = FEF25
+
+    return FEV1,MEF25,MEF50,MEF75,PEF
+
+
+# OCR 或 PDF解析
+if "text" in locals():
+
+    FEV1,MEF25,MEF50,MEF75,PEF = parse_pft(text)
+
+    st.write("Detected values")
+
+    st.write("FEV1:",FEV1)
+    st.write("MEF25:",MEF25)
+    st.write("MEF50:",MEF50)
+    st.write("MEF75:",MEF75)
+    st.write("PEF:",PEF)
+
+    PEF_AM = PEF
+    PEF_PM = PEF
+
+
+# =========================
 # 指标计算
-# -----------------------
+# =========================
 
-def remission_score(fev1, symptom):
+def remission_score(fev1,symptom):
 
-    score = fev1 * 30
-    score -= symptom * 10
+    score = fev1*30
 
-    return max(0, min(100, score))
+    score -= symptom*10
 
-
-def small_airway_index(m25, m50, m75):
-
-    return (m25 + m50 + m75) / 3
+    return max(0,min(100,score))
 
 
-def pef_variability(am, pm):
+def small_airway_index(m25,m50,m75):
 
-    return abs(am - pm) / ((am + pm) / 2) * 100
+    return (m25+m50+m75)/3
 
 
-RS = remission_score(FEV1, symptom)
-SAI = small_airway_index(MEF25, MEF50, MEF75)
-PV = pef_variability(PEF_AM, PEF_PM)
+def pef_variability(am,pm):
 
-# -----------------------
+    return abs(am-pm)/((am+pm)/2)*100
+
+
+if FEV1 and MEF25 and MEF50 and MEF75:
+
+    RS = remission_score(FEV1,symptom)
+
+    SAI = small_airway_index(MEF25,MEF50,MEF75)
+
+    PV = pef_variability(PEF_AM,PEF_PM)
+
+
+# =========================
+# Dashboard
+# =========================
+
+    st.header("Clinical Dashboard")
+
+    c1,c2,c3 = st.columns(3)
+
+    with c1:
+
+        st.metric("Remission Score",round(RS,1))
+
+    with c2:
+
+        st.metric("Small Airway Index",round(SAI,1))
+
+    with c3:
+
+        st.metric("PEF Variability %",round(PV,1))
+
+
+# =========================
 # 分级
-# -----------------------
+# =========================
 
-def remission_grade(x):
+    if RS>=90:
 
-    if x >= 90:
-        return "Clinical Remission", "green", "哮喘临床缓解"
+        st.success("Clinical Remission")
 
-    elif x >= 70:
-        return "Controlled", "orange", "哮喘基本控制"
+    elif RS>=70:
 
-    else:
-        return "Uncontrolled", "red", "哮喘控制不佳"
-
-
-def airway_grade(x):
-
-    if x >= 60:
-        return "Normal", "green", "小气道正常"
-
-    elif x >= 40:
-        return "Mild dysfunction", "orange", "轻度小气道异常"
+        st.warning("Controlled Asthma")
 
     else:
-        return "Significant disease", "red", "明显小气道病变"
+
+        st.error("Uncontrolled Asthma")
 
 
-def pef_grade(x):
-
-    if x < 10:
-        return "Stable airway", "green", "气道稳定"
-
-    elif x < 20:
-        return "Moderate variability", "orange", "气道波动"
-
-    else:
-        return "High variability", "red", "急性发作风险增加"
-
-
-RS_label, RS_color, RS_mean = remission_grade(RS)
-SAI_label, SAI_color, SAI_mean = airway_grade(SAI)
-PV_label, PV_color, PV_mean = pef_grade(PV)
-
-# -----------------------
-# 指标卡片
-# -----------------------
-
-st.header("Clinical Dashboard")
-
-c1, c2, c3 = st.columns(3)
-
-with c1:
-
-    st.metric("Remission Score", round(RS,1))
-    st.markdown(f":{RS_color}[{RS_label}]")
-    st.write(RS_mean)
-
-with c2:
-
-    st.metric("Small Airway Index", round(SAI,1))
-    st.markdown(f":{SAI_color}[{SAI_label}]")
-    st.write(SAI_mean)
-
-with c3:
-
-    st.metric("PEF Variability %", round(PV,1))
-    st.markdown(f":{PV_color}[{PV_label}]")
-    st.write(PV_mean)
-
-# -----------------------
-# 趋势图
-# -----------------------
-
-st.header("Disease Trend")
-
-trend = pd.DataFrame({
-    "Day":[1,2,3,4,5,6,7],
-    "Remission":[82,85,87,90,92,94,96],
-    "SmallAirway":[48,50,52,55,58,60,61],
-    "PEFVar":[14,12,11,9,7,5,3]
-})
-
-fig = px.line(trend, x="Day", y=["Remission","SmallAirway","PEFVar"])
-
-st.plotly_chart(fig, use_container_width=True)
-
-# -----------------------
-# 雷达图
-# -----------------------
-
-st.header("Airway Health Radar")
-
-radar = pd.DataFrame(dict(
-    r=[RS,SAI,100-PV,80,75],
-    theta=[
-        "Remission",
-        "Small Airway",
-        "Airway Stability",
-        "Symptom Control",
-        "Lung Function"
-    ]
-))
-
-fig2 = px.line_polar(radar, r='r', theta='theta', line_close=True)
-
-st.plotly_chart(fig2)
-
-# -----------------------
+# =========================
 # AI Doctor Report
-# -----------------------
+# =========================
 
-st.header("AI Doctor Report")
+    st.header("AI Doctor Report")
 
-if RS >= 90 and PV < 10:
+    st.write("Severity:",RS)
 
-    st.success("Asthma near clinical remission")
+    st.write("Small airway:",SAI)
 
-elif RS >= 70:
+    st.write("Airway variability:",PV)
 
-    st.warning("Asthma partially controlled")
 
-else:
+# =========================
+# Medication Adjustment
+# =========================
 
-    st.error("Poor asthma control")
+    st.header("Medication Adjustment")
 
-st.write("Severity:", RS_label)
-st.write("Small airway:", SAI_label)
-st.write("Airway variability:", PV_label)
+    st.write("Current therapy: Breztri")
 
-# -----------------------
-# 用药建议
-# -----------------------
+    if RS>=90:
 
-st.header("Medication Adjustment")
-
-st.write("Current therapy: Budesonide / Glycopyrrolate / Formoterol")
-
-if RS >= 90:
-
-    st.success("""
+        st.success("""
 Step-down suggestion
 
-• maintain therapy 3 months
-• consider SMART therapy
-• repeat lung function
+maintain therapy 3 months
+switch to SMART therapy
 """)
 
-elif RS >= 70:
+    elif RS>=70:
 
-    st.warning("""
+        st.warning("""
 Maintain therapy
-
-• optimize inhaler technique
-• allergen control
+optimize inhaler technique
 """)
 
-else:
+    else:
 
-    st.error("""
-Escalation recommended
-
-• specialist review
-• consider biologic therapy
+        st.error("""
+Escalation needed
+specialist review
 """)
 
-# -----------------------
-# 缓解概率
-# -----------------------
 
-st.header("Remission Probability")
+# =========================
+# 趋势图
+# =========================
 
-prob = min(100, RS - PV)
+    st.header("Disease Trend")
 
-st.metric("Probability %", round(prob,1))
+    trend = pd.DataFrame({
+
+        "Day":[1,2,3,4,5],
+
+        "Remission":[80,85,88,92,RS],
+
+        "SmallAirway":[45,48,52,56,SAI],
+
+        "PEFVar":[15,12,9,6,PV]
+
+    })
+
+    fig = px.line(trend,x="Day",y=["Remission","SmallAirway","PEFVar"])
+
+    st.plotly_chart(fig,use_container_width=True)
