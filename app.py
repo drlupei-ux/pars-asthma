@@ -1,187 +1,222 @@
 import streamlit as st
 import numpy as np
+import pandas as pd
+import plotly.express as px
 
 st.set_page_config(page_title="PARS Asthma System", layout="wide")
 
 st.title("PARS – Asthma Remission System")
 
+# -----------------------
 # 示例数据
-data = {
-    "PEF_AM":580,
-    "PEF_PM":560,
-    "FEV1":2.6,
-    "MEF25":30,
-    "MEF50":40,
-    "MEF75":50,
-    "symptom":1
-}
+# -----------------------
 
-# --------------------
+PEF_AM = 580
+PEF_PM = 560
+FEV1 = 2.6
+MEF25 = 30
+MEF50 = 40
+MEF75 = 50
+symptom = 1
+
+# -----------------------
 # 指标计算
-# --------------------
+# -----------------------
 
 def remission_score(fev1, symptom):
+
     score = fev1 * 30
     score -= symptom * 10
+
     return max(0, min(100, score))
 
-def small_airway_index(mef25, mef50, mef75):
-    return (mef25 + mef50 + mef75)/3
+
+def small_airway_index(m25, m50, m75):
+
+    return (m25 + m50 + m75) / 3
+
 
 def pef_variability(am, pm):
-    return abs(am-pm)/((am+pm)/2)*100
 
-rs = remission_score(data["FEV1"], data["symptom"])
-sai = small_airway_index(data["MEF25"], data["MEF50"], data["MEF75"])
-pv = pef_variability(data["PEF_AM"], data["PEF_PM"])
+    return abs(am - pm) / ((am + pm) / 2) * 100
 
-# --------------------
+
+RS = remission_score(FEV1, symptom)
+SAI = small_airway_index(MEF25, MEF50, MEF75)
+PV = pef_variability(PEF_AM, PEF_PM)
+
+# -----------------------
 # 分级
-# --------------------
+# -----------------------
 
-def remission_grade(score):
+def remission_grade(x):
 
-    if score >= 90:
-        return "Clinical Remission","green","Asthma fully controlled"
+    if x >= 90:
+        return "Clinical Remission", "green", "哮喘临床缓解"
 
-    elif score >= 70:
-        return "Controlled Asthma","orange","Symptoms minimal but residual airway inflammation possible"
-
-    else:
-        return "Uncontrolled Asthma","red","Active disease requiring treatment optimization"
-
-
-def airway_grade(index):
-
-    if index >= 60:
-        return "Normal Small Airway","green","Small airway flow preserved"
-
-    elif index >= 40:
-        return "Mild Small Airway Dysfunction","orange","Early small airway involvement"
+    elif x >= 70:
+        return "Controlled", "orange", "哮喘基本控制"
 
     else:
-        return "Significant Small Airway Disease","red","Marked small airway obstruction"
+        return "Uncontrolled", "red", "哮喘控制不佳"
 
 
-def pef_grade(var):
+def airway_grade(x):
 
-    if var < 10:
-        return "Stable Airway","green","Low airway variability"
+    if x >= 60:
+        return "Normal", "green", "小气道正常"
 
-    elif var < 20:
-        return "Moderate Variability","orange","Airway instability present"
+    elif x >= 40:
+        return "Mild dysfunction", "orange", "轻度小气道异常"
 
     else:
-        return "High Variability","red","High exacerbation risk"
+        return "Significant disease", "red", "明显小气道病变"
 
 
-rs_label, rs_color, rs_text = remission_grade(rs)
-sai_label, sai_color, sai_text = airway_grade(sai)
-pv_label, pv_color, pv_text = pef_grade(pv)
+def pef_grade(x):
 
-# --------------------
-# Dashboard
-# --------------------
+    if x < 10:
+        return "Stable airway", "green", "气道稳定"
+
+    elif x < 20:
+        return "Moderate variability", "orange", "气道波动"
+
+    else:
+        return "High variability", "red", "急性发作风险增加"
+
+
+RS_label, RS_color, RS_mean = remission_grade(RS)
+SAI_label, SAI_color, SAI_mean = airway_grade(SAI)
+PV_label, PV_color, PV_mean = pef_grade(PV)
+
+# -----------------------
+# 指标卡片
+# -----------------------
 
 st.header("Clinical Dashboard")
 
-c1,c2,c3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
 
 with c1:
 
-    st.metric("Remission Score", round(rs,1))
-    st.markdown(f":{rs_color}[{rs_label}]")
-    st.write(rs_text)
+    st.metric("Remission Score", round(RS,1))
+    st.markdown(f":{RS_color}[{RS_label}]")
+    st.write(RS_mean)
 
 with c2:
 
-    st.metric("Small Airway Index", round(sai,1))
-    st.markdown(f":{sai_color}[{sai_label}]")
-    st.write(sai_text)
+    st.metric("Small Airway Index", round(SAI,1))
+    st.markdown(f":{SAI_color}[{SAI_label}]")
+    st.write(SAI_mean)
 
 with c3:
 
-    st.metric("PEF Variability %", round(pv,1))
-    st.markdown(f":{pv_color}[{pv_label}]")
-    st.write(pv_text)
+    st.metric("PEF Variability %", round(PV,1))
+    st.markdown(f":{PV_color}[{PV_label}]")
+    st.write(PV_mean)
 
-# --------------------
-# 综合判断
-# --------------------
+# -----------------------
+# 趋势图
+# -----------------------
 
-st.header("Overall Interpretation")
+st.header("Disease Trend")
 
-if rs >= 90 and pv < 10:
+trend = pd.DataFrame({
+    "Day":[1,2,3,4,5,6,7],
+    "Remission":[82,85,87,90,92,94,96],
+    "SmallAirway":[48,50,52,55,58,60,61],
+    "PEFVar":[14,12,11,9,7,5,3]
+})
 
-    st.success("Asthma in near clinical remission")
+fig = px.line(trend, x="Day", y=["Remission","SmallAirway","PEFVar"])
 
-elif rs >= 70:
+st.plotly_chart(fig, use_container_width=True)
 
-    st.warning("Partially controlled asthma with residual airway dysfunction")
+# -----------------------
+# 雷达图
+# -----------------------
 
-else:
+st.header("Airway Health Radar")
 
-    st.error("Poor asthma control with elevated exacerbation risk")
+radar = pd.DataFrame(dict(
+    r=[RS,SAI,100-PV,80,75],
+    theta=[
+        "Remission",
+        "Small Airway",
+        "Airway Stability",
+        "Symptom Control",
+        "Lung Function"
+    ]
+))
 
-# --------------------
+fig2 = px.line_polar(radar, r='r', theta='theta', line_close=True)
+
+st.plotly_chart(fig2)
+
+# -----------------------
 # AI Doctor Report
-# --------------------
+# -----------------------
 
 st.header("AI Doctor Report")
 
-if rs >= 90:
+if RS >= 90 and PV < 10:
 
-    severity = "Mild asthma / remission stage"
-    plan = """
-Continue current therapy.
+    st.success("Asthma near clinical remission")
 
-Step-down consideration:
+elif RS >= 70:
 
-• Maintain current therapy for 3 months  
-• Transition to SMART therapy  
-• Monitor PEF weekly
-"""
-
-elif rs >= 70:
-
-    severity = "Moderate asthma"
-
-    plan = """
-Maintain current therapy.
-
-Recommended actions:
-
-• optimize inhaler technique  
-• allergen exposure control  
-• reassess lung function in 4 weeks
-"""
+    st.warning("Asthma partially controlled")
 
 else:
 
-    severity = "Poorly controlled asthma"
+    st.error("Poor asthma control")
 
-    plan = """
-Escalation recommended.
+st.write("Severity:", RS_label)
+st.write("Small airway:", SAI_label)
+st.write("Airway variability:", PV_label)
 
-Consider:
+# -----------------------
+# 用药建议
+# -----------------------
 
-• short course systemic steroids  
-• specialist consultation  
-• biologic therapy assessment
-"""
+st.header("Medication Adjustment")
 
-st.write("Severity:",severity)
+st.write("Current therapy: Budesonide / Glycopyrrolate / Formoterol")
 
-st.write("Treatment suggestion:")
+if RS >= 90:
 
-st.write(plan)
+    st.success("""
+Step-down suggestion
 
-# --------------------
+• maintain therapy 3 months
+• consider SMART therapy
+• repeat lung function
+""")
+
+elif RS >= 70:
+
+    st.warning("""
+Maintain therapy
+
+• optimize inhaler technique
+• allergen control
+""")
+
+else:
+
+    st.error("""
+Escalation recommended
+
+• specialist review
+• consider biologic therapy
+""")
+
+# -----------------------
 # 缓解概率
-# --------------------
+# -----------------------
 
 st.header("Remission Probability")
 
-prob = min(100, rs - pv)
+prob = min(100, RS - PV)
 
-st.metric("Estimated probability", round(prob,1))
+st.metric("Probability %", round(prob,1))
