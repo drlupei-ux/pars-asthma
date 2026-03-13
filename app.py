@@ -1,7 +1,4 @@
 import streamlit as st
-import numpy as np
-import pandas as pd
-import plotly.express as px
 import pytesseract
 from PIL import Image
 import pdfplumber
@@ -22,11 +19,15 @@ uploaded_file = st.file_uploader(
     type=["pdf","png","jpg","jpeg"]
 )
 
-text=""
+text = ""
+
+# ======================
+# OCR读取
+# ======================
 
 if uploaded_file:
 
-    if uploaded_file.type=="application/pdf":
+    if uploaded_file.type == "application/pdf":
 
         with pdfplumber.open(uploaded_file) as pdf:
 
@@ -45,15 +46,15 @@ if uploaded_file:
 
         text = pytesseract.image_to_string(image,lang="chi_sim+eng")
 
-    st.text_area("Report Text",text,height=200)
+    st.text_area("OCR Result",text,height=200)
 
 # ======================
-# 解析肺功能
+# 解析函数
 # ======================
 
 def extract(pattern,text):
 
-    m=re.search(pattern,text,re.IGNORECASE)
+    m = re.search(pattern,text,re.IGNORECASE)
 
     if m:
         return float(m.group(1))
@@ -63,176 +64,183 @@ def extract(pattern,text):
 
 def parse(text):
 
-    FEV1=extract(r"FEV1[^0-9]*(\d+\.\d+)",text)
+    FEV1 = extract(r"FEV1[^0-9]*(\d+\.\d+)",text)
 
-    MEF25=extract(r"MEF25[^0-9]*(\d+\.?\d*)",text)
+    MEF25 = extract(r"MEF25[^0-9]*(\d+\.?\d*)",text)
 
-    MEF50=extract(r"MEF50[^0-9]*(\d+\.?\d*)",text)
+    MEF50 = extract(r"MEF50[^0-9]*(\d+\.?\d*)",text)
 
-    MEF75=extract(r"MEF75[^0-9]*(\d+\.?\d*)",text)
+    MEF75 = extract(r"MEF75[^0-9]*(\d+\.?\d*)",text)
 
-    FEF25=extract(r"FEF25[^0-9]*(\d+\.?\d*)",text)
+    FEF25 = extract(r"FEF25[^0-9]*(\d+\.?\d*)",text)
 
-    FEF50=extract(r"FEF50[^0-9]*(\d+\.?\d*)",text)
+    FEF50 = extract(r"FEF50[^0-9]*(\d+\.?\d*)",text)
 
-    FEF75=extract(r"FEF75[^0-9]*(\d+\.?\d*)",text)
+    FEF75 = extract(r"FEF75[^0-9]*(\d+\.?\d*)",text)
 
-    PEF=extract(r"PEF[^0-9]*(\d+\.?\d*)",text)
+    PEF = extract(r"PEF[^0-9]*(\d+\.?\d*)",text)
 
     if MEF25 is None and FEF75:
-        MEF25=FEF75
+        MEF25 = FEF75
 
     if MEF50 is None and FEF50:
-        MEF50=FEF50
+        MEF50 = FEF50
 
     if MEF75 is None and FEF25:
-        MEF75=FEF25
+        MEF75 = FEF25
 
     return FEV1,MEF25,MEF50,MEF75,PEF
 
 
+# ======================
+# 默认值
+# ======================
+
+FEV1 = 2.6
+MEF25 = 30
+MEF50 = 40
+MEF75 = 50
+PEF = 560
+symptom = 1
+
+# ======================
+# OCR解析
+# ======================
+
 if text:
 
-    FEV1,MEF25,MEF50,MEF75,PEF=parse(text)
+    p = parse(text)
 
-    st.write("Detected values")
-
-    st.write("FEV1:",FEV1)
-    st.write("MEF25:",MEF25)
-    st.write("MEF50:",MEF50)
-    st.write("MEF75:",MEF75)
-    st.write("PEF:",PEF)
+    if p[0]:
+        FEV1,MEF25,MEF50,MEF75,PEF = p
 
 # ======================
-# 计算指标
+# 手动输入备用
 # ======================
 
-def remission_score(fev1):
+st.subheader("Manual Adjustment")
 
-    return fev1*30
+c1,c2,c3 = st.columns(3)
 
+with c1:
 
-def small_airway(m25,m50,m75):
+    FEV1 = st.number_input("FEV1",value=float(FEV1))
 
-    return (m25+m50+m75)/3
+with c2:
 
+    MEF25 = st.number_input("MEF25",value=float(MEF25))
+    MEF50 = st.number_input("MEF50",value=float(MEF50))
+    MEF75 = st.number_input("MEF75",value=float(MEF75))
 
-def pef_variability(am,pm):
+with c3:
 
-    return abs(am-pm)/((am+pm)/2)*100
+    PEF = st.number_input("PEF",value=float(PEF))
 
+# ======================
+# 指标计算
+# ======================
 
-if text and FEV1 and MEF25 and MEF50 and MEF75:
+RS = FEV1 * 30
 
-    RS=remission_score(FEV1)
+SAI = (MEF25 + MEF50 + MEF75) / 3
 
-    SAI=small_airway(MEF25,MEF50,MEF75)
-
-    PV=0
+PV = 0
 
 # ======================
 # Dashboard
 # ======================
 
-    st.header("Clinical Dashboard")
+st.header("Clinical Dashboard")
 
-    c1,c2,c3=st.columns(3)
+c1,c2,c3 = st.columns(3)
 
-    with c1:
-        st.metric("Remission Score",round(RS,1))
+with c1:
 
-    with c2:
-        st.metric("Small Airway Index",round(SAI,1))
+    st.metric("Remission Score",round(RS,1))
 
-    with c3:
-        st.metric("PEF Variability %",round(PV,1))
+with c2:
+
+    st.metric("Small Airway Index",round(SAI,1))
+
+with c3:
+
+    st.metric("PEF Variability %",round(PV,1))
 
 # ======================
 # Interpretation
 # ======================
 
-    st.header("Interpretation")
+if RS >= 90:
 
-    if RS>=90:
+    st.success("Asthma close to clinical remission")
 
-        st.success("Asthma close to clinical remission")
+elif RS >= 70:
 
-    elif RS>=70:
+    st.warning("Controlled Asthma")
 
-        st.warning("Controlled Asthma")
+else:
 
-    else:
-
-        st.error("Uncontrolled Asthma")
+    st.error("Uncontrolled Asthma")
 
 # ======================
 # AI Doctor Report
 # ======================
 
-    st.header("AI Doctor Report")
+st.header("AI Doctor Report")
 
-    if RS>=90:
+if RS >= 90:
 
-        severity="Mild asthma"
+    severity = "Mild asthma"
+    trend = "Improving"
+    interpretation = "Airway stable with high remission probability"
 
-        trend="Improving"
+elif RS >= 70:
 
-        interpretation="Airway stable with good remission probability"
+    severity = "Moderate asthma"
+    trend = "Stable"
+    interpretation = "Residual small airway dysfunction"
 
-    elif RS>=70:
+else:
 
-        severity="Moderate asthma"
+    severity = "Severe asthma"
+    trend = "Worsening"
+    interpretation = "High risk of exacerbation"
 
-        trend="Stable"
-
-        interpretation="Persistent small airway dysfunction"
-
-    else:
-
-        severity="Severe asthma"
-
-        trend="Worsening"
-
-        interpretation="High airway variability risk"
-
-    st.write("Severity:",severity)
-
-    st.write("Trend:",trend)
-
-    st.write("Interpretation:",interpretation)
+st.write("Severity:",severity)
+st.write("Trend:",trend)
+st.write("Interpretation:",interpretation)
 
 # ======================
 # Medication
 # ======================
 
-    st.header("Medication Adjustment")
+st.header("Medication Adjustment")
 
-    st.write("Current therapy: Breztri")
+st.write("Current therapy: Breztri")
 
-    if RS>=90:
+if RS >= 90:
 
-        st.success("""
+    st.success("""
 Suggested step-down plan
 
-Maintain therapy 3 months
-Switch to SMART therapy
-Monitor lung function
+Maintain therapy for 3 months  
+Consider SMART therapy
 """)
 
-    elif RS>=70:
+elif RS >= 70:
 
-        st.warning("""
+    st.warning("""
 Maintain therapy
 
-Optimize inhaler technique
-Control allergen exposure
+Optimize inhaler technique  
+Control allergens
 """)
 
-    else:
+else:
 
-        st.error("""
+    st.error("""
 Escalation needed
 
-Consider biologics
-Specialist consultation
+Specialist consultation  
+Consider biologic therapy
 """)
