@@ -1,8 +1,8 @@
 streamlit
 pandas
+numpy
+plotly
+Pillow
 pytesseract
 pdfplumber
-Pillow
-plotly
-numpy
-
+opencv-python
