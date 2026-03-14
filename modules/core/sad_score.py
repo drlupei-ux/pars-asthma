@@ -1,16 +1,10 @@
-def sad_score(mef25, mef50, mef75, fef25, fef50, fef75):
+def calculate_sad_score(mef25, mef50, mef75):
 
-    values = [mef25, mef50, mef75, fef25, fef50, fef75]
-
-    score = sum(values) / len(values)
+    score = (mef25 + mef50 + mef75) / 3
 
     if score >= 60:
-        status = "Normal small airway function"
-
+        return 80
     elif score >= 40:
-        status = "Mild small airway dysfunction"
-
+        return 60
     else:
-        status = "Severe small airway dysfunction"
-
-    return score, status
+        return 30
